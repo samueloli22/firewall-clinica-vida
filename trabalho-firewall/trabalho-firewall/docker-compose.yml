@@ -1,0 +1,94 @@
+x-hosts: &hosts
+  - "prontuario:172.30.3.10"
+  - "site:172.30.3.20"
+  - "banco:172.30.4.10"
+
+services:
+  recepcao:
+    build: ./cliente
+    container_name: recepcao
+    cap_add: [NET_ADMIN]
+    environment:
+      FW_IP: 172.30.1.254
+    extra_hosts: *hosts
+    depends_on: [firewall]
+    networks:
+      rede_recepcao:
+        ipv4_address: 172.30.1.10
+
+  wifi_paciente:
+    build: ./cliente
+    container_name: wifi_paciente
+    cap_add: [NET_ADMIN]
+    environment:
+      FW_IP: 172.30.2.254
+    extra_hosts: *hosts
+    depends_on: [firewall]
+    networks:
+      rede_wifi:
+        ipv4_address: 172.30.2.10
+
+  firewall:
+    build: ./firewall
+    container_name: firewall
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: 1
+    networks:
+      rede_recepcao:
+        ipv4_address: 172.30.1.254
+      rede_wifi:
+        ipv4_address: 172.30.2.254
+      rede_dmz:
+        ipv4_address: 172.30.3.254
+      rede_dados:
+        ipv4_address: 172.30.4.254
+
+  prontuario:
+    image: nginx:alpine
+    container_name: prontuario_web
+    cap_add: [NET_ADMIN]
+    extra_hosts: *hosts
+    command: sh -c "ip route add 172.30.0.0/16 via 172.30.3.254 && exec nginx -g 'daemon off;'"
+    volumes:
+      - ./prontuario:/usr/share/nginx/html:ro
+    networks:
+      rede_dmz:
+        ipv4_address: 172.30.3.10
+
+  site:
+    image: nginx:alpine
+    container_name: site_publico
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    networks:
+      rede_dmz:
+        ipv4_address: 172.30.3.20
+
+  banco:
+    image: postgres:16-alpine
+    container_name: banco_prontuario
+    environment:
+      POSTGRES_PASSWORD: senha_lab
+      POSTGRES_DB: prontuarios
+    networks:
+      rede_dados:
+        ipv4_address: 172.30.4.10
+
+networks:
+  rede_recepcao:
+    driver: bridge
+    ipam:
+      config: [{ subnet: 172.30.1.0/24 }]
+  rede_wifi:
+    driver: bridge
+    ipam:
+      config: [{ subnet: 172.30.2.0/24 }]
+  rede_dmz:
+    driver: bridge
+    ipam:
+      config: [{ subnet: 172.30.3.0/24 }]
+  rede_dados:
+    driver: bridge
+    ipam:
+      config: [{ subnet: 172.30.4.0/24 }]
